@@ -1,0 +1,8 @@
+{
+  "storeKey": "demo_grass",
+  "type": "grass_default",
+  "centerX": 100,
+  "centerZ": 100,
+  "radius": 25,
+  "densityMul": 2.0
+}

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mont-ed.dev/foliage_un06/schemas/foliage_envelope.json",
+  "title": "Foliage Response Envelope",
+  "type": "object",
+  "required": ["ok","plugin","command","version"],
+  "properties": {
+    "ok":          {"type":"boolean","description":"true if command succeeded"},
+    "plugin":      {"type":"string","const":"foliage_un06"},
+    "command":     {"type":"string","description":"command id that was executed, e.g. foliage_un06.scatter"},
+    "version":     {"type":"string","description":"plugin version, e.g. 0.5.0"},
+    "storeKey":    {"type":"string","description":"instance store key used or affected"},
+    "result":      {"type":"object","description":"command-specific result payload"},
+    "diagnostics": {"type":"array","items":{"type":"string"},"description":"informational diagnostics"},
+    "warnings":    {"type":"array","items":{"type":"string"},"description":"non-fatal warnings"},
+    "error":       {"$ref":"#/definitions/error"},
+    "dryRun":      {"type":"boolean","description":"true if command ran in dry-run mode"},
+    "traceId":     {"type":"integer","description":"correlation id from request"}
+  },
+  "definitions": {
+    "error": {
+      "type":"object",
+      "required":["code","message"],
+      "properties": {
+        "code":   {"type":"string","description":"error code, e.g. InvalidArgument, NotImplemented"},
+        "field":  {"type":"string","description":"which field caused the error"},
+        "message":{"type":"string","description":"human-readable error description"},
+        "traceId":{"type":"integer"}
+      }
+    }
+  }
+}

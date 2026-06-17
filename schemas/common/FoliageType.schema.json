@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mont-ed.dev/foliage_un06/schemas/foliage_type.json",
+  "title": "FoliageType",
+  "type": "object",
+  "required": ["name"],
+  "properties": {
+    "name":       {"type":"string","description":"Unique type name"},
+    "meshId":     {"type":"string","description":"Mesh asset reference (cube, cross_billboard, etc.)"},
+    "density":    {"type":"number","minimum":0,"maximum":100,"description":"Base instances per unit²"},
+    "radius":     {"type":"number","minimum":0,"description":"Min distance between instances (0=auto)"},
+    "scaleMin":   {"type":"number","minimum":0.01,"maximum":100},
+    "scaleMax":   {"type":"number","minimum":0.01,"maximum":100},
+    "uniformScale":{"type":"boolean"},
+    "randomRotation":{"type":"boolean"},
+    "alignToNormal":{"type":"boolean"},
+    "slopeMax":   {"type":"number","minimum":-1,"maximum":90,"description":"Max slope in degrees, -1 disables"},
+    "heightMin":  {"type":"number"},
+    "heightMax":  {"type":"number"},
+    "seed":       {"type":"integer","minimum":0,"maximum":4294967295},
+    "lodCullDistance":{"type":"number","minimum":0}
+  }
+}

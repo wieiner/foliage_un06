@@ -1,0 +1,8 @@
+{
+  "action": "scatter",
+  "areaWidth": 500,
+  "areaDepth": 500,
+  "originX": 0,
+  "originZ": 0,
+  "terrain": "synthetic"
+}

@@ -1,0 +1,14 @@
+{
+  "storeKey": "demo_grass",
+  "type": "grass_default",
+  "areaWidth": 200,
+  "areaDepth": 200,
+  "density": 0.04,
+  "seed": 42,
+  "slopeMax": 45,
+  "alignToNormal": true,
+  "randomRotation": true,
+  "includePreviewMesh": true,
+  "maxInstancesInResponse": 500,
+  "terrain": "synthetic"
+}

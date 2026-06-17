@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mont-ed.dev/foliage_un06/schemas/scatter_input.json",
+  "title": "Scatter Input",
+  "type": "object",
+  "properties": {
+    "storeKey":    {"type":"string","default":"default"},
+    "type":        {"type":"string","default":"grass_default"},
+    "areaWidth":   {"type":"number","minimum":1,"maximum":100000,"default":200},
+    "areaDepth":   {"type":"number","minimum":1,"maximum":100000,"default":200},
+    "originX":     {"type":"number","default":0},
+    "originZ":     {"type":"number","default":0},
+    "density":     {"type":"number","minimum":0.0001,"maximum":100,"default":0.04},
+    "scaleMin":    {"type":"number","minimum":0.01,"maximum":100},
+    "scaleMax":    {"type":"number","minimum":0.01,"maximum":100},
+    "slopeMax":    {"type":"number","minimum":-1,"maximum":90},
+    "heightMin":   {"type":"number"},
+    "heightMax":   {"type":"number"},
+    "seed":        {"type":"integer","minimum":0},
+    "maxInstances":{"type":"integer","minimum":0,"maximum":200000,"default":50000},
+    "maxInstancesInResponse":{"type":"integer","minimum":0,"maximum":5000,"default":200},
+    "terrain":     {"type":"string","enum":["synthetic","flat"],"default":"synthetic"},
+    "includePreviewMesh":{"type":"boolean","default":false}
+  }
+}

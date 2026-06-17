@@ -1,0 +1,11 @@
+{
+  "storeKey": "demo_grass",
+  "areaWidth": 200,
+  "areaDepth": 200,
+  "density": 0.03,
+  "seed": 42,
+  "includePreviewMesh": true,
+  "maxInstancesInResponse": 300,
+  "includeDebugPoints": true,
+  "includeClusterBounds": true
+}
