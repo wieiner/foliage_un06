@@ -401,6 +401,16 @@ MONTED_EXPORT int handle_lodConfigToBuf(const char* in, char* out, size_t n);
 MONTED_EXPORT int handle_statisticsGroupedToBuf(const char* in, char* out, size_t n);
 MONTED_EXPORT int handle_listCommandsToBuf(const char* in, char* out, size_t n);
 MONTED_EXPORT int handle_healthCheckToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_scatterMultiTypeToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_selectInstancesToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_clearStoreToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_duplicateStoreToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_compactStoreToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_reseedToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_validatePayloadToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_diffStoresToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_exportEnginePayloadToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_densityHeatmapToBuf(const char* in, char* out, size_t n);
 
 // ======================================================================
 // 1. foliage_un06.scatter (structured parser — v0.5.0)
@@ -2267,6 +2277,117 @@ MONTED_EXPORT int handle_healthCheckToBuf(const char* /*in*/, char* out, size_t 
     out[pos]='\0'; return 0;
 }
 
+// ======================================================================
+// 44. foliage_un06.scatter_multi_type  (weighted multi-type scatter)
+// ======================================================================
+MONTED_EXPORT int handle_scatterMultiTypeToBuf(const char* in, char* out, size_t n) {
+    if (!out || n == 0) return 6;
+    if (!in || !in[0]) { std::snprintf(out,n,"{\"code\":7,\"message\":\"empty_payload\"}"); return 0; }
+    foliage::json::Parser parser; auto root=parser.Parse(in);
+    if(!parser.error.ok()){ std::snprintf(out,n,"{\"code\":6,\"message\":\"invalid JSON: %s\"}",parser.error.message.c_str()); return 0; }
+    double w=root.ClampedNum("areaWidth",200,1,100000), d=root.ClampedNum("areaDepth",200,1,100000);
+    double ox=root.NumKey("originX",0), oz=root.NumKey("originZ",0);
+    int maxInst=root.ClampedInt("maxInstances",50000,0,200000);
+    bool inclPrev=root.BoolKey("includePreviewMesh",false);
+    std::string storeKey=root.StrKey("storeKey","default");
+    unsigned baseSeed=(unsigned)root.U32Key("seed",1337);
+    auto&terrain=pickTerrain(in);
+    size_t pos=0; int totalKept=0; pos+=std::snprintf(out+pos,n-pos,"{\"code\":0,\"message\":\"multi_scattered\",\"results\":[");
+    const auto* arr=root.Find("types"); if(!arr||!arr->IsArray()){ pos+=std::snprintf(out+pos,n-pos,"{\"error\":\"types_array_required\"}]}"); out[pos]='\0'; return 0; }
+    int tc=(int)arr->ArrSize(); std::vector<foliage::FoliageInstance> all;
+    for(int ti=0;ti<tc&&ti<50;++ti){ auto*e=arr->ArrAt(ti); if(!e||!e->IsObject())continue;
+        std::string tn=e->StrKey("name","grass_default"); double wt=e->NumKey("weight",1.0); if(wt<=0)continue;
+        auto it=g_types.find(tn); if(it==g_types.end()){ if(ti)out[pos++]=','; pos+=std::snprintf(out+pos,n-pos,"{\"type\":\"%s\",\"error\":\"not_found\"}",tn.c_str()); continue; }
+        foliage::FoliageType ft=it->second; ft.density*=wt; ft.seed=baseSeed+(unsigned)ti*1000;
+        foliage::ScatterArea a; a.originX=ox;a.originZ=oz;a.width=w;a.depth=d;
+        auto r=foliage::PoissonDiscScatter::ScatterWithStats(terrain,ft,a,maxInst/std::max(1,tc),30);
+        all.insert(all.end(),r.instances.begin(),r.instances.end());
+        if(ti)out[pos++]=','; pos+=std::snprintf(out+pos,n-pos,"{\"type\":\"%s\",\"weight\":%.2f,\"kept\":%u}",tn.c_str(),wt,r.kept); totalKept+=r.kept;
+    }
+    pos+=std::snprintf(out+pos,n-pos,"],\"totalKept\":%d",totalKept);
+    if(!all.empty()&&n-pos>200)writeInstanceJson(all,out,pos,n,150);
+    out[pos++]='}';out[pos]='\0';return 0;
+}
+// 45. foliage_un06.select_instances
+MONTED_EXPORT int handle_selectInstancesToBuf(const char* in, char* out, size_t n) {
+    if(!out||n==0)return 6;
+    double cx=ej(in,"x",0),cz=ej(in,"z",0),r=ej(in,"radius",50);
+    double bx=ej(in,"boxX",-1),bw=ej(in,"boxW",0),bd=ej(in,"boxD",0);
+    std::string sk=ej_str(in,"storeKey","default");
+    std::vector<foliage::FoliageInstance> insts;
+    {std::lock_guard<std::mutex>lk(g_storeMutex);auto it=g_instanceStores.find(sk);if(it!=g_instanceStores.end())insts=it->second;}
+    if(insts.empty()&&ej(in,"areaWidth",-1)>0){double aw=ej(in,"areaWidth",200),ad=ej(in,"areaDepth",200);foliage::ScatterArea a;a.width=aw;a.depth=ad;insts=foliage::PoissonDiscScatter::Scatter(pickTerrain(in),overrideType(in,pickType(in)),a,5000,30);}
+    std::vector<int>sel;for(int i=0;i<(int)insts.size();++i){bool m=false;if(bw>0){if(insts[i].x>=bx&&insts[i].x<=bx+bw&&insts[i].z>=ej(in,"boxZ",0)&&insts[i].z<=ej(in,"boxZ",0)+bd)m=true;}else{double dx=insts[i].x-cx,dz=insts[i].z-cz;if(dx*dx+dz*dz<=r*r)m=true;}if(m)sel.push_back(i);}
+    size_t pos=0;pos+=std::snprintf(out+pos,n-pos,"{\"code\":0,\"message\":\"selected\",\"total\":%zu,\"hits\":[",insts.size());
+    for(size_t i=0;i<sel.size()&&i<200;++i){if(i)out[pos++]=',';pos+=std::snprintf(out+pos,n-pos,"%d",sel[i]);if(pos>n-50)break;}
+    pos+=std::snprintf(out+pos,n-pos,"],\"hitCount\":%zu}",sel.size());out[pos]='\0';return 0;
+}
+// 46. foliage_un06.clear_store
+MONTED_EXPORT int handle_clearStoreToBuf(const char* in, char* out, size_t n) {
+    if(!out||n==0)return 6;std::string sk=ej_str(in,"storeKey","default");bool dr=ej_bool(in,"dryRun",true);
+    size_t b=0;{std::lock_guard<std::mutex>lk(g_storeMutex);auto it=g_instanceStores.find(sk);if(it!=g_instanceStores.end())b=it->second.size();}
+    if(!dr){std::lock_guard<std::mutex>lk(g_storeMutex);g_instanceStores.erase(sk);}
+    std::snprintf(out,n,"{\"code\":0,\"message\":\"%s\",\"storeKey\":\"%s\",\"removedCount\":%zu,\"dryRun\":%s}",dr?"dry_run_clear":"cleared",sk.c_str(),b,dr?"true":"false");return 0;
+}
+// 47. foliage_un06.duplicate_store
+MONTED_EXPORT int handle_duplicateStoreToBuf(const char* in, char* out, size_t n) {
+    if(!out||n==0)return 6;std::string src=ej_str(in,"sourceKey","default"),dst=ej_str(in,"targetKey","default_copy");
+    size_t cnt=0;{std::lock_guard<std::mutex>lk(g_storeMutex);auto it=g_instanceStores.find(src);if(it!=g_instanceStores.end()){g_instanceStores[dst]=it->second;cnt=it->second.size();}}
+    std::snprintf(out,n,"{\"code\":0,\"message\":\"duplicated\",\"sourceKey\":\"%s\",\"targetKey\":\"%s\",\"count\":%zu}",src.c_str(),dst.c_str(),cnt);return 0;
+}
+// 48. foliage_un06.compact_store
+MONTED_EXPORT int handle_compactStoreToBuf(const char* in, char* out, size_t n) {
+    if(!out||n==0)return 6;std::string sk=ej_str(in,"storeKey","default");size_t b=0;double bx[4]={0,0,0,0};
+    {std::lock_guard<std::mutex>lk(g_storeMutex);auto it=g_instanceStores.find(sk);if(it!=g_instanceStores.end()){b=it->second.size();if(b>0){bx[0]=bx[1]=it->second[0].x;bx[2]=bx[3]=it->second[0].z;for(auto&i:it->second){if(i.x<bx[0])bx[0]=i.x;if(i.x>bx[1])bx[1]=i.x;if(i.z<bx[2])bx[2]=i.z;if(i.z>bx[3])bx[3]=i.z;}}}}
+    double aw=bx[1]-bx[0],ad=bx[3]-bx[2];if(aw<0)aw=0;if(ad<0)ad=0;
+    std::snprintf(out,n,"{\"code\":0,\"message\":\"compacted\",\"storeKey\":\"%s\",\"count\":%zu,\"bounds\":[%.1f,%.1f,%.1f,%.1f],\"area\":%.0f}",sk.c_str(),b,bx[0],bx[1],bx[2],bx[3],aw*ad);return 0;
+}
+// 49. foliage_un06.reseed
+MONTED_EXPORT int handle_reseedToBuf(const char* in, char* out, size_t n) {
+    if(!out||n==0)return 6;std::string sk=ej_str(in,"storeKey","default");unsigned ns=(unsigned)ej(in,"seed",1337);
+    const foliage::FoliageType&t=pickType(in);size_t c=0;foliage::FoliagePrng prng(ns);
+    {std::lock_guard<std::mutex>lk(g_storeMutex);auto it=g_instanceStores.find(sk);if(it!=g_instanceStores.end()){for(auto&i:it->second){i.scaleX=i.scaleY=i.scaleZ=prng.NextRange(t.scaleMin,t.scaleMax);i.yaw=prng.NextRange(0,6.283185307);}c=it->second.size();}}
+    std::snprintf(out,n,"{\"code\":0,\"message\":\"reseeded\",\"storeKey\":\"%s\",\"count\":%zu,\"seed\":%u}",sk.c_str(),c,ns);return 0;
+}
+// 50. foliage_un06.validate_payload
+MONTED_EXPORT int handle_validatePayloadToBuf(const char* in, char* out, size_t n) {
+    if(!out||n==0)return 6;if(!in||!in[0]){std::snprintf(out,n,"{\"code\":0,\"valid\":false,\"error\":\"empty\"}");return 0;}
+    std::string cn=ej_str(in,"commandId",""),pl=ej_str(in,"payload","{}");
+    if(cn.empty()){std::snprintf(out,n,"{\"code\":0,\"valid\":false,\"error\":\"missing_commandId\"}");return 0;}
+    foliage::json::Parser p;auto r=p.Parse(pl.c_str());bool ok=p.error.ok()&&r.IsObject();
+    char sp[256];std::snprintf(sp,sizeof(sp),"schemas/commands/%s.input.schema.json",cn.c_str());bool hs=false;{std::ifstream f(sp);hs=f.good();}
+    std::snprintf(out,n,"{\"code\":0,\"commandId\":\"%s\",\"valid\":%s,\"hasSchema\":%s,\"parserOk\":%s}",cn.c_str(),ok?"true":"false",hs?"true":"false",p.error.ok()?"true":"false");return 0;
+}
+// 51. foliage_un06.diff_stores
+MONTED_EXPORT int handle_diffStoresToBuf(const char* in, char* out, size_t n) {
+    if(!out||n==0)return 6;std::string ak=ej_str(in,"storeA","default"),bk=ej_str(in,"storeB","default_copy");
+    size_t ac=0,bc=0,add=0,rem=0;
+    {std::lock_guard<std::mutex>lk(g_storeMutex);auto ia=g_instanceStores.find(ak),ib=g_instanceStores.find(bk);ac=ia!=g_instanceStores.end()?ia->second.size():0;bc=ib!=g_instanceStores.end()?ib->second.size():0;if(bc>ac)add=bc-ac;else if(ac>bc)rem=ac-bc;}
+    std::snprintf(out,n,"{\"code\":0,\"message\":\"diffed\",\"storeA\":{\"key\":\"%s\",\"count\":%zu},\"storeB\":{\"key\":\"%s\",\"count\":%zu},\"added\":%zu,\"removed\":%zu}",ak.c_str(),ac,bk.c_str(),bc,add,rem);return 0;
+}
+// 52. foliage_un06.export_engine_payload
+MONTED_EXPORT int handle_exportEnginePayloadToBuf(const char* in, char* out, size_t n) {
+    if(!out||n==0)return 6;std::string sk=ej_str(in,"storeKey","default");
+    std::vector<foliage::FoliageInstance>insts;
+    {std::lock_guard<std::mutex>lk(g_storeMutex);auto it=g_instanceStores.find(sk);if(it!=g_instanceStores.end())insts=it->second;}
+    if(insts.empty()){double w=ej(in,"areaWidth",200),d=ej(in,"areaDepth",200);foliage::ScatterArea a;a.width=w;a.depth=d;insts=foliage::PoissonDiscScatter::Scatter(pickTerrain(in),overrideType(in,pickType(in)),a,5000,30);}
+    foliage::MeshTemplate tm=foliage::MakeCrossBillboardMesh(0.3,1.0);auto cm=foliage::ClusterBuilder::BuildCombined(insts,tm);
+    std::snprintf(out,n,"{\"code\":0,\"schema\":\"monted.mesh.result.v1\",\"sourcePlugin\":\"foliage_un06\",\"commandId\":\"foliage_un06.scatter\",\"mesh\":{\"vertexCount\":%d,\"indexCount\":%d,\"triangleCount\":%d,\"boundsMin\":[%.1f,%.1f,%.1f],\"boundsMax\":[%.1f,%.1f,%.1f],\"boundingBox\":[%.1f,%.1f,%.1f,%.1f,%.1f,%.1f]},\"instanceCount\":%zu}",cm.vertexCount,cm.indexCount,cm.indexCount/3,cm.boundsMin[0],cm.boundsMin[1],cm.boundsMin[2],cm.boundsMax[0],cm.boundsMax[1],cm.boundsMax[2],cm.boundsMin[0],cm.boundsMin[1],cm.boundsMin[2],cm.boundsMax[0],cm.boundsMax[1],cm.boundsMax[2],insts.size());return 0;
+}
+// 53. foliage_un06.density_heatmap
+MONTED_EXPORT int handle_densityHeatmapToBuf(const char* in, char* out, size_t n) {
+    if(!out||n==0)return 6;std::string sk=ej_str(in,"storeKey","default");double cs=ej(in,"cellSize",5);
+    std::vector<foliage::FoliageInstance>insts;
+    {std::lock_guard<std::mutex>lk(g_storeMutex);auto it=g_instanceStores.find(sk);if(it!=g_instanceStores.end())insts=it->second;}
+    if(insts.empty()){double w=ej(in,"areaWidth",200),d=ej(in,"areaDepth",200);foliage::ScatterArea a;a.width=w;a.depth=d;insts=foliage::PoissonDiscScatter::Scatter(pickTerrain(in),overrideType(in,pickType(in)),a,5000,30);}
+    double ox=ej(in,"originX",0),oz=ej(in,"originZ",0),w=ej(in,"areaWidth",200),d=ej(in,"areaDepth",200);
+    int cols=std::max(1,(int)(w/cs)+1),rows=std::max(1,(int)(d/cs)+1);std::vector<int>g(cols*rows,0);int mv=0;
+    for(auto&i:insts){int ci=cols?(int)((i.x-ox)/cs):0,cj=rows?(int)((i.z-oz)/cs):0;if(ci>=0&&ci<cols&&cj>=0&&cj<rows){int idx=cj*cols+ci;++g[idx];if(g[idx]>mv)mv=g[idx];}}
+    size_t pos=0;pos+=std::snprintf(out+pos,n-pos,"{\"code\":0,\"message\":\"heatmap\",\"cols\":%d,\"rows\":%d,\"cellSize\":%.0f,\"maxDensity\":%d,\"grid\":[",cols,rows,cs,mv);
+    int mo=std::min(cols*rows,1000);for(int i=0;i<mo;++i){if(i)out[pos++]=',';pos+=std::snprintf(out+pos,n-pos,"%d",g[i]);if(pos>n-20)break;}
+    pos+=std::snprintf(out+pos,n-pos,"]}");out[pos]='\0';return 0;
+}
+
 // ====== Legacy descriptor ======
 MONTED_EXPORT const char* MontEd_GetBusHandlerDescriptor()
 {
@@ -2274,30 +2395,11 @@ MONTED_EXPORT const char* MontEd_GetBusHandlerDescriptor()
            "\"entry_point\":\"handle_scatterToBuf\","
            "\"schema\":\"\","
            "\"version\":\"0.5.0\","
-           "\"commandCount\":41,"
-           "\"commands\":["
-           "\"foliage_un06.inspect\",\"foliage_un06.scatter\",\"foliage_un06.paint\","
-           "\"foliage_un06.erase\",\"foliage_un06.get_types\",\"foliage_un06.add_type\","
-           "\"foliage_un06.generate_mesh\",\"foliage_un06.reapply\",\"foliage_un06.fill\","
-           "\"foliage_un06.simulate\",\"foliage_un06.query\",\"foliage_un06.place_single\","
-           "\"foliage_un06.remove_instances\",\"foliage_un06.analyze\","
-           "\"foliage_un06.export_state\",\"foliage_un06.import_state\","
-           "\"foliage_un06.density_falloff\",\"foliage_un06.layer_mask\","
-           "\"foliage_un06.noise_modulate\",\"foliage_un06.z_offset\","
-           "\"foliage_un06.cull_distance\",\"foliage_un06.batch\","
-           "\"foliage_un06.checkpoint\",\"foliage_un06.merge\","
-           "\"foliage_un06.mirror_region\",\"foliage_un06.exclusion_zone\","
-           "\"foliage_un06.preset\",\"foliage_un06.benchmark\","
-           "\"foliage_un06.sample_terrain\",\"foliage_un06.biome\","
-           "\"foliage_un06.radial\",\"foliage_un06.along_path\","
-           "\"foliage_un06.clump\",\"foliage_un06.brush_shapes\","
-           "\"foliage_un06.random_replace\",\"foliage_un06.filter_by_type\","
-           "\"foliage_un06.transform_instances\",\"foliage_un06.wind_params\","
-           "\"foliage_un06.collision_settings\",\"foliage_un06.lod_config\","
-           "\"foliage_un06.statistics_grouped\""
-           "],"
-           "\"description\":\"Foliage scatter system v0.5.0: 41 commands. "
+           "\"commandCount\":53,"
+           "\"description\":\"Foliage scatter system v0.5.0: 53 commands. "
            "Deterministic Poisson-disc placement, brush paint/erase, ecosystem simulation, "
            "spatial query, biome zones, patterns (radial/path/clump), masks, noise, "
-           "statistics, LOD/wind/collision config. Backs onto instmesh_un05 for ISM rendering.\"}";
+           "statistics, LOD/wind/collision config, multi-type scatter, selection, "
+           "store management, reseed, validation, diff, engine payload, heatmap. "
+           "Backs onto instmesh_un05 for ISM rendering.\"}";
 }

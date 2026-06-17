@@ -123,10 +123,22 @@ inline constexpr CommandEntry kCommandRegistry[] = {
     // ---- Phase 5 (hardening): Utility commands (2) ----
     {"foliage_un06.list_commands",     "list_commands",      "handle_listCommandsToBuf",      "List Commands",      "Return canonical command registry with all plugin commands.",          Category::kUtility,       Permission::kProjectRead,   false, true,  false, true,  true,  true,  false, nullptr, nullptr},
     {"foliage_un06.health_check",      "health_check",       "handle_healthCheckToBuf",       "Health Check",       "Deep self-test: schemas, registry, handlers, stores, limits.",        Category::kUtility,       Permission::kProjectRead,   false, true,  false, true,  true,  true,  false, nullptr, nullptr},
+
+    // ---- Phase 6: Production commands (10) ----
+    {"foliage_un06.scatter_multi_type","scatter_multi_type", "handle_scatterMultiTypeToBuf",  "Multi-Type Scatter", "Weighted multi-type scatter: [{name, weight}] → proportional placement.", Category::kScatter,  Permission::kSceneWrite,     false, true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.select_instances",  "select_instances",   "handle_selectInstancesToBuf",   "Select Instances",   "Selection by radius, bounding box, or type filter. Returns hit indices.",  Category::kUtility,  Permission::kProjectRead,    false, true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.clear_store",       "clear_store",        "handle_clearStoreToBuf",        "Clear Store",        "Clear entire instance store with dry-run preview and confirm semantics.",   Category::kPersistence,Permission::kSceneWrite,   true,  true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.duplicate_store",   "duplicate_store",    "handle_duplicateStoreToBuf",    "Duplicate Store",    "Deep-copy one store to another key for branching/experimentation.",         Category::kPersistence,Permission::kSceneWrite,   false, true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.compact_store",     "compact_store",      "handle_compactStoreToBuf",      "Compact Store",      "Rebuild spatial layout: compute bounds, clusters, total area.",             Category::kUtility,  Permission::kProjectRead,    false, true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.reseed",            "reseed",             "handle_reseedToBuf",            "Reseed Instances",   "Re-randomize scale and rotation of existing instances with new seed.",      Category::kUtility,  Permission::kSceneWrite,     false, true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.validate_payload",  "validate_payload",   "handle_validatePayloadToBuf",   "Validate Payload",   "Validate JSON payload against schema. Reports parse errors, no execution.", Category::kUtility,  Permission::kProjectRead,    false, true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.diff_stores",       "diff_stores",        "handle_diffStoresToBuf",        "Diff Stores",        "Compare two stores: added, removed, unchanged counts.",                    Category::kPersistence,Permission::kProjectRead,  false, true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.export_engine_payload","export_engine_payload","handle_exportEnginePayloadToBuf","Export Engine",  "Export as PluginMeshResult-compatible JSON for 3D viewport preview.",       Category::kUtility,  Permission::kProjectRead,    false, true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.density_heatmap",   "density_heatmap",    "handle_densityHeatmapToBuf",    "Density Heatmap",    "2D density grid: instance counts per cell. Configurable cell size.",        Category::kAnalysis, Permission::kProjectRead,    false, true,  false, true,  true,  true,  false, nullptr, nullptr},
 };
 
 inline constexpr int kCommandCount = sizeof(kCommandRegistry) / sizeof(kCommandRegistry[0]);
-static_assert(kCommandCount == 43, "Command registry must have exactly 43 entries");
+static_assert(kCommandCount == 53, "Command registry must have exactly 53 entries");
 
 // ---------------------------------------------------------------------------
 // Convenience helpers

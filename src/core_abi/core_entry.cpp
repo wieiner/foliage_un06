@@ -77,6 +77,16 @@ extern "C" {
     int handle_statisticsGroupedToBuf(const char* in, char* out, size_t n);
     int handle_listCommandsToBuf(const char* in, char* out, size_t n);
     int handle_healthCheckToBuf(const char* in, char* out, size_t n);
+    int handle_scatterMultiTypeToBuf(const char* in, char* out, size_t n);
+    int handle_selectInstancesToBuf(const char* in, char* out, size_t n);
+    int handle_clearStoreToBuf(const char* in, char* out, size_t n);
+    int handle_duplicateStoreToBuf(const char* in, char* out, size_t n);
+    int handle_compactStoreToBuf(const char* in, char* out, size_t n);
+    int handle_reseedToBuf(const char* in, char* out, size_t n);
+    int handle_validatePayloadToBuf(const char* in, char* out, size_t n);
+    int handle_diffStoresToBuf(const char* in, char* out, size_t n);
+    int handle_exportEnginePayloadToBuf(const char* in, char* out, size_t n);
+    int handle_densityHeatmapToBuf(const char* in, char* out, size_t n);
 }
 
 // ---- V4 Plugin API ----------------------------------------------------
@@ -221,7 +231,17 @@ foliage_getBusHandlersJson(char* out, std::uint32_t outSize, std::uint32_t* requ
         "{\"commandId\":\"foliage_un06.lod_config\",\"entryPoint\":\"handle_lodConfigToBuf\"},"
         "{\"commandId\":\"foliage_un06.statistics_grouped\",\"entryPoint\":\"handle_statisticsGroupedToBuf\"},"
         "{\"commandId\":\"foliage_un06.list_commands\",\"entryPoint\":\"handle_listCommandsToBuf\"},"
-        "{\"commandId\":\"foliage_un06.health_check\",\"entryPoint\":\"handle_healthCheckToBuf\"}"
+        "{\"commandId\":\"foliage_un06.health_check\",\"entryPoint\":\"handle_healthCheckToBuf\"},"
+        "{\"commandId\":\"foliage_un06.scatter_multi_type\",\"entryPoint\":\"handle_scatterMultiTypeToBuf\"},"
+        "{\"commandId\":\"foliage_un06.select_instances\",\"entryPoint\":\"handle_selectInstancesToBuf\"},"
+        "{\"commandId\":\"foliage_un06.clear_store\",\"entryPoint\":\"handle_clearStoreToBuf\"},"
+        "{\"commandId\":\"foliage_un06.duplicate_store\",\"entryPoint\":\"handle_duplicateStoreToBuf\"},"
+        "{\"commandId\":\"foliage_un06.compact_store\",\"entryPoint\":\"handle_compactStoreToBuf\"},"
+        "{\"commandId\":\"foliage_un06.reseed\",\"entryPoint\":\"handle_reseedToBuf\"},"
+        "{\"commandId\":\"foliage_un06.validate_payload\",\"entryPoint\":\"handle_validatePayloadToBuf\"},"
+        "{\"commandId\":\"foliage_un06.diff_stores\",\"entryPoint\":\"handle_diffStoresToBuf\"},"
+        "{\"commandId\":\"foliage_un06.export_engine_payload\",\"entryPoint\":\"handle_exportEnginePayloadToBuf\"},"
+        "{\"commandId\":\"foliage_un06.density_heatmap\",\"entryPoint\":\"handle_densityHeatmapToBuf\"}"
         "]}",
         out, outSize, required);
 }
@@ -356,6 +376,26 @@ foliage_executeCommand(const char* commandId,
         handler = handle_listCommandsToBuf;
     else if (std::strcmp(commandId, "foliage_un06.health_check") == 0)
         handler = handle_healthCheckToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.scatter_multi_type") == 0)
+        handler = handle_scatterMultiTypeToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.select_instances") == 0)
+        handler = handle_selectInstancesToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.clear_store") == 0)
+        handler = handle_clearStoreToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.duplicate_store") == 0)
+        handler = handle_duplicateStoreToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.compact_store") == 0)
+        handler = handle_compactStoreToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.reseed") == 0)
+        handler = handle_reseedToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.validate_payload") == 0)
+        handler = handle_validatePayloadToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.diff_stores") == 0)
+        handler = handle_diffStoresToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.export_engine_payload") == 0)
+        handler = handle_exportEnginePayloadToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.density_heatmap") == 0)
+        handler = handle_densityHeatmapToBuf;
     else
         return MONTED_STATUS_NOT_IMPLEMENTED;
 
