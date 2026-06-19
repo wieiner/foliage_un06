@@ -17,6 +17,7 @@
 #include "../common/foliage_pattern.h"
 #include "../common/foliage_biome.h"
 #include "../common/foliage_json.h"
+#include "../common/foliage_command_registry.h"
 
 #include <cstdio>
 #include <cstring>
@@ -320,33 +321,24 @@ MONTED_EXPORT int handle_inspectToBuf(const char*, char* out, size_t n)
     if (!out || n == 0) return 6;
     size_t pos = 0;
     pos += std::snprintf(out + pos, n - pos,
-        "{\"code\":0,\"plugin\":\"foliage_un06\",\"version\":\"0.5.0\",\"type\":\"foliage_tool\","
+        "{\"code\":0,\"plugin\":\"foliage_un06\",\"version\":\"0.6.0\",\"type\":\"foliage_tool\","
         "\"protocolPreset\":\"core-bus\",\"protocols\":[\"core\",\"bus\"],"
-        "\"capability\":\"foliage/vegetation scatter over instanced mesh\","
-        "\"features\":["
-        "\"poisson_disc_scatter\",\"brush_paint\",\"brush_erase\","
-        "\"slope_filter\",\"height_filter\",\"align_to_normal\","
-        "\"random_rotation\",\"random_scale\",\"cluster_output\","
-        "\"deterministic_seed\","
-        "\"reapply\",\"fill\",\"ecosystem_simulation\","
-        "\"spatial_query\",\"single_placement\","
-        "\"instance_removal\",\"statistical_analysis\","
-        "\"state_export_import\",\"density_falloff\""
-        "],"
+        "\"commandCount\":63,"
+        "\"features\":[\"poisson_scatter\",\"brush_paint\",\"brush_erase\",\"ecosystem_sim\","
+        "\"spatial_query\",\"analysis\",\"biomes\",\"patterns\",\"masks\",\"noise\","
+        "\"config\",\"persistence\",\"pipeline\",\"selection\",\"coverage\"],"
         "\"commands\":["
-        "\"foliage_un06.scatter\",\"foliage_un06.paint\",\"foliage_un06.erase\","
-        "\"foliage_un06.get_types\",\"foliage_un06.add_type\","
-        "\"foliage_un06.generate_mesh\",\"foliage_un06.inspect\","
-        "\"foliage_un06.reapply\",\"foliage_un06.fill\","
-        "\"foliage_un06.simulate\",\"foliage_un06.query\","
-        "\"foliage_un06.place_single\",\"foliage_un06.remove_instances\","
-        "\"foliage_un06.analyze\",\"foliage_un06.export_state\","
-        "\"foliage_un06.import_state\",\"foliage_un06.density_falloff\""
-        "],"
-        "\"meshTypes\":[\"cube\",\"cross_billboard\"],"
+    );
+    // Dynamic: iterate registry to stay in sync
+    for (int i = 0; i < 63 && pos < n - 300; ++i) {
+        if (!foliage::kCommandRegistry[i].commandId) continue;
+        if (i > 0) { BUF_CHECK(pos, n); out[pos++] = ','; }
+        pos += std::snprintf(out + pos, n - pos, "\"%s\"", foliage::kCommandRegistry[i].commandId);
+    }
+    pos += std::snprintf(out + pos, n - pos,
+        "],\"meshTypes\":[\"cube\",\"cross_billboard\"],"
         "\"terrainModes\":[\"synthetic\",\"flat\"],"
-        "\"backsOnto\":\"instmesh_un05\""
-        "}");
+        "\"backsOnto\":\"instmesh_un05\"}");
     out[pos] = '\0';
     return 0;
 }
@@ -1632,11 +1624,9 @@ MONTED_EXPORT int handle_biomeToBuf(const char* in, char* out, size_t n) {
         size_t start=0, end;
         while ((end=types.find(',',start))!=std::string::npos) { bz.typeNames.push_back(types.substr(start,end-start)); start=end+1; }
         bz.typeNames.push_back(types.substr(start));
-        static foliage::BiomeStack g_biomes;
-        g_biomes.AddZone(bz);
+        { std::lock_guard<std::mutex> lk(g_biomeMutex); g_biomes.AddZone(bz); }
         pos+=std::snprintf(out+pos,n-pos,"{\"code\":0,\"message\":\"zone_added\",\"name\":\"%s\",\"types\":%zu,\"zones\":%zu}",bz.name.c_str(),bz.typeNames.size(),g_biomes.Zones().size());
     } else if (action == "scatter") {
-        static foliage::BiomeStack g_biomes;
         const double w=ej(in,"areaWidth",200),d=ej(in,"areaDepth",200);
         foliage::ScatterArea area; area.originX=ej(in,"originX",0); area.originZ=ej(in,"originZ",0); area.width=w; area.depth=d;
         auto& terrain=pickTerrain(in);
@@ -1930,24 +1920,20 @@ MONTED_EXPORT int handle_listCommandsToBuf(const char* in, char* out, size_t n) 
     if (!out || n == 0) return 6;
     const char* compact = std::strstr(in, "\"compact\":true");
     size_t pos = 0;
-    pos += std::snprintf(out+pos,n-pos,"{\"code\":0,\"message\":\"command_list\",\"version\":\"0.5.0\",\"count\":41");
+    pos += std::snprintf(out+pos,n-pos,"{\"code\":0,\"message\":\"command_list\",\"version\":\"0.6.0\",\"count\":63");
     if (compact) {
         pos += std::snprintf(out+pos,n-pos,",\"ids\":[");
-        const char* ids[]={
-            "foliage_un06.inspect","scatter","paint","erase","get_types","add_type",
-            "generate_mesh","reapply","fill","simulate","query","place_single",
-            "remove_instances","analyze","export_state","import_state","density_falloff",
-            "layer_mask","noise_modulate","z_offset","cull_distance","batch",
-            "checkpoint","merge","mirror_region","exclusion_zone","preset",
-            "benchmark","sample_terrain","biome","radial","along_path",
-            "clump","brush_shapes","random_replace","filter_by_type",
-            "transform_instances","wind_params","collision_settings","lod_config",
-            "statistics_grouped"
-        };
-        for (int i=0;i<41;++i) { if(i)out[pos++]=','; pos+=std::snprintf(out+pos,n-pos,"\"%s\"",ids[i]); }
-        out[pos++]=']';
+        for (int i = 0; i < 63 && pos < n - 100; ++i) {
+            if (i) { BUF_CHECK(pos, n); out[pos++] = ','; }
+            // Extract short name after "foliage_un06."
+            const char* full = foliage::kCommandRegistry[i].commandId;
+            const char* dot = std::strrchr(full, '.');
+            const char* name = dot ? dot + 1 : full;
+            pos += std::snprintf(out+pos, n-pos, "\"%s\"", name);
+        }
+        out[pos++] = ']';
     }
-    out[pos++]='}'; out[pos]='\0'; return 0;
+    out[pos++] = '}'; out[pos] = '\0'; return 0;
 }
 
 // ======================================================================
@@ -1964,12 +1950,12 @@ MONTED_EXPORT int handle_healthCheckToBuf(const char* /*in*/, char* out, size_t 
     { std::lock_guard<std::mutex> lk(g_checkpointMutex); for(auto& [k,v]:g_checkpoints) checkpointCount+=(int)v.size(); }
     pos+=std::snprintf(out+pos,n-pos,
         "{\"code\":0,\"message\":\"health_check\",\"healthy\":true,"
-        "\"checks\":{\"schemas_found\":%s,\"registry_size\":%d,\"handler_count\":41,"
+        "\"checks\":{\"schemas_found\":%s,\"registry_size\":%d,\"handler_count\":63,"
         "\"types_loaded\":%d,\"stores_active\":%d,\"checkpoints_total\":%d},"
-        "\"version\":\"0.5.0\",\"abi\":4,\"limits\":{"
+        "\"version\":\"0.6.0\",\"abi\":4,\"limits\":{"
         "\"maxInstancesPerCommand\":50000,\"maxBatchSize\":100,\"maxCheckpoints\":50,"
         "\"maxFileImportMb\":50,\"maxTerrainGridSamples\":2500}}",
-        schemas_ok?"true":"false",41,typeCount,storeCount,checkpointCount);
+        schemas_ok?"true":"false",63,typeCount,storeCount,checkpointCount);
     out[pos]='\0'; return 0;
 }
 

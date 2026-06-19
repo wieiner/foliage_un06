@@ -52,7 +52,7 @@ $cppFiles = @(
 $srcArgs = ($cppFiles | ForEach-Object { '"' + (Join-Path $root $_) + '"' }) -join ' '
 $dllOut = Join-Path $OutDir "$name.dll"
 
-$dllCmd = "cl /nologo /std:c++17 /O2 /MT /EHsc /bigobj /LD $srcArgs /link /OUT:`"$dllOut`""
+$dllCmd = "cl /nologo /std:c++17 /O1 /MT /EHsc /bigobj /LD $srcArgs /link /OUT:`"$dllOut`""
 $fullCmd = "cd /d `"$root`" && $vcEnv && $dllCmd"
 
 cmd /c $fullCmd

@@ -7,7 +7,8 @@ namespace foliage { namespace json {
 // Value helpers
 // ---------------------------------------------------------------------------
 const std::string& Value::StrOr(const std::string& def) const {
-    static std::string empty;
+    // Thread-safe: static const string is initialized once at compile time
+    static const std::string empty;
     return IsString() ? strVal : (def.empty() ? empty : def);
 }
 

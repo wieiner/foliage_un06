@@ -64,9 +64,26 @@ struct BenchmarkStats { double lastMs=0; int lastInstanceCount=0,totalRuns=0; do
 inline std::mutex g_benchMutex;
 inline BenchmarkStats g_benchStats;
 
+// Configuration state for wind/collision/LOD (stored per-type since FoliageType v1 doesn't have these)
+struct TypeConfig { double windStrength=1.0,swayAmount=0.5,leafFlutter=0.3,gustFreq=0.2; std::string collisionPreset="NoCollision"; bool collisionEnabled=false; double lod0=500,lod1=1500,lod2=3000,billboard=5000; bool useImpostor=true; };
+inline std::mutex g_configMutex;
+inline std::map<std::string, TypeConfig> g_typeConfigs;
+
+// Biome mutex
+inline std::mutex g_biomeMutex; // separate mutex for biome stack
+inline foliage::BiomeStack g_biomes; // included via foliage_biome.h in both TUs
+
+// ---- Safe buffer write helpers (prevents buffer overflow) ----
+#define BUF_CHECK(pos, n) do { if((pos) >= (n)) return 6; } while(0)
+inline void bufWrite(char* out, size_t& pos, size_t n, const char* s) { size_t len=std::strlen(s); if(pos+len>=n)return; std::memcpy(out+pos,s,len); pos+=len; }
+inline void bufWriteChar(char* out, size_t& pos, size_t n, char c) { if(pos>=n)return; out[pos++]=c; }
+
 // ---- Helpers ----
 inline void ensureDefaultTypes() {
-    if(!g_types.empty())return;
+    { std::lock_guard<std::mutex> lk(g_typeMutex); if(!g_types.empty())return; }
+    // Locked init
+    std::lock_guard<std::mutex> lk(g_typeMutex);
+    if(!g_types.empty())return; // double-check
     foliage::FoliageType grass; grass.name="grass_default";grass.meshId="cross_billboard";grass.density=0.15;grass.scaleMin=0.5;grass.scaleMax=1.2;grass.slopeMax=45.0;grass.seed=1337;grass.randomRotation=true;grass.alignToNormal=true;g_types[grass.name]=grass;
     foliage::FoliageType tree; tree.name="tree_pine";tree.meshId="cube";tree.density=0.005;tree.scaleMin=0.9;tree.scaleMax=1.6;tree.slopeMax=35.0;tree.heightMin=0;tree.heightMax=50;tree.seed=42;tree.randomRotation=true;tree.alignToNormal=true;g_types[tree.name]=tree;
     foliage::FoliageType bush; bush.name="bush_default";bush.meshId="cube";bush.density=0.08;bush.scaleMin=0.4;bush.scaleMax=1.0;bush.slopeMax=50.0;bush.seed=777;bush.randomRotation=true;bush.alignToNormal=true;g_types[bush.name]=bush;

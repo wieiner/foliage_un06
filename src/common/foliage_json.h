@@ -2,13 +2,14 @@
 // Replaces fragile string-scan parsing with structural validation.
 #pragma once
 
+#include <cstdio>
 #include <cstdint>
+#include <cstring>
+#include <cstdlib>
+#include <cmath>
 #include <string>
 #include <vector>
 #include <map>
-#include <cmath>
-#include <cstring>
-#include <cstdlib>
 
 namespace foliage { namespace json {
 

@@ -11,6 +11,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 
 namespace foliage {
 
@@ -135,10 +136,22 @@ inline constexpr CommandEntry kCommandRegistry[] = {
     {"foliage_un06.diff_stores",       "diff_stores",        "handle_diffStoresToBuf",        "Diff Stores",        "Compare two stores: added, removed, unchanged counts.",                    Category::kPersistence,Permission::kProjectRead,  false, true,  false, true,  true,  true,  false, nullptr, nullptr},
     {"foliage_un06.export_engine_payload","export_engine_payload","handle_exportEnginePayloadToBuf","Export Engine",  "Export as PluginMeshResult-compatible JSON for 3D viewport preview.",       Category::kUtility,  Permission::kProjectRead,    false, true,  false, true,  true,  true,  false, nullptr, nullptr},
     {"foliage_un06.density_heatmap",   "density_heatmap",    "handle_densityHeatmapToBuf",    "Density Heatmap",    "2D density grid: instance counts per cell. Configurable cell size.",        Category::kAnalysis, Permission::kProjectRead,    false, true,  false, true,  true,  true,  false, nullptr, nullptr},
+
+    // ---- Phase 7: Advanced production features (10) ----
+    {"foliage_un06.compute_bounds",    "compute_bounds",      "handle_computeBoundsToBuf",     "Compute Bounds",     "Precise spatial bounds: min/max X,Y,Z, center, size, area, volume.",        Category::kAnalysis, Permission::kProjectRead,    false, true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.auto_lod",          "auto_lod",            "handle_autoLODToBuf",           "Auto LOD",           "Recommended LOD distances per importance class (grass/bush/tree/rock/decor).",Category::kConfiguration,Permission::kProjectRead, false, true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.group_by_cluster",  "group_by_cluster",    "handle_groupByClusterToBuf",    "Group By Cluster",   "Per-cluster statistics: count, avgHeight, avgScale per spatial cell.",      Category::kAnalysis, Permission::kProjectRead,    false, true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.jitter_positions",  "jitter_positions",    "handle_jitterPositionsToBuf",   "Jitter Positions",   "Random position variation within maxJitter, respects terrain filters.",      Category::kUtility,  Permission::kSceneWrite,     true,  true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.export_instances_csv","export_instances_csv","handle_exportCSVToBuf",         "Export CSV",         "CSV export: x,y,z,nx,ny,nz,scaleX,scaleY,scaleZ,yaw. Importable to Blender.",Category::kPersistence,Permission::kFilesystemWrite,false,true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.snap_to_terrain",   "snap_to_terrain",     "handle_snapToTerrainToBuf",     "Snap To Terrain",    "Re-snap all instances to terrain surface. Updates height and normal.",       Category::kUtility,  Permission::kSceneWrite,     true,  true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.remove_outliers",   "remove_outliers",     "handle_removeOutliersToBuf",    "Remove Outliers",    "Statistical height outlier removal by sigma threshold from mean height.",    Category::kFilter,   Permission::kSceneWrite,     true,  true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.coverage_analysis", "coverage_analysis",   "handle_coverageAnalysisToBuf",  "Coverage Analysis",  "Area coverage %: covered cells, empty patches, max/avg density per cell.",   Category::kAnalysis, Permission::kProjectRead,    false, true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.pipeline",          "pipeline",            "handle_pipelineToBuf",          "Composable Pipeline","Multi-step pipeline: scatter→noise→jitter→snap→reseed in one call.",        Category::kUtility,  Permission::kProjectRead,    false, true,  false, true,  true,  true,  false, nullptr, nullptr},
+    {"foliage_un06.store_memory",      "store_memory",        "handle_storeMemoryToBuf",       "Store Memory",       "Memory estimate: instances, checkpoints, types, zones, presets in KB/MB.",  Category::kPerformance,Permission::kProjectRead,   false, true,  false, true,  true,  true,  false, nullptr, nullptr},
 };
 
 inline constexpr int kCommandCount = sizeof(kCommandRegistry) / sizeof(kCommandRegistry[0]);
-static_assert(kCommandCount == 53, "Command registry must have exactly 53 entries");
+static_assert(kCommandCount == 63, "Command registry must have exactly 63 entries");
 
 // ---------------------------------------------------------------------------
 // Convenience helpers
