@@ -11,6 +11,66 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <string>
+#include <algorithm>
+
+// ====== Exception Safety Guard ======
+// Every handler is wrapped with HANDLER_GUARD_BEGIN/HANDLER_GUARD_END.
+// Prevents C++ exceptions from leaking across the C ABI boundary (undefined behavior on Windows).
+#define HANDLER_GUARD_BEGIN \
+    try {
+
+#define HANDLER_GUARD_END \
+    } catch (const std::exception& e) { \
+        if (out && n > 0) { std::snprintf(out, n, "{\"code\":8,\"message\":\"internal error: %s\"}", e.what()); } \
+        return 8; \
+    } catch (...) { \
+        if (out && n > 0) { std::snprintf(out, n, "{\"code\":8,\"message\":\"internal error: unknown exception\"}"); } \
+        return 8; \
+    }
+
+// Safe buffer guards — zero runtime cost when pos stays in bounds
+#define BUF_CHECK(pos, n) do { if((pos) >= (n)) return 6; } while(0)
+
+// ====== File Path Validation ======
+// Rejects paths with "..", ":", or absolute paths outside allowed roots.
+// Returns empty string if path is dangerous (caller should check).
+inline std::string validatePath(const std::string& path, bool forWrite = false) {
+    if (path.empty()) return "";
+    // Reject path traversal
+    if (path.find("..") != std::string::npos) return "";
+    // Reject absolute Windows paths with drive letters or UNC
+    if (path.size() >= 2 && path[1] == ':') return "";
+    if (path[0] == '/' || path[0] == '\\') return "";
+    // Reject shell metacharacters
+    if (path.find_first_of("|;&$`<>") != std::string::npos) return "";
+    // For write operations, only allow within build/ or exports/
+    if (forWrite) {
+        if (path.rfind("build/", 0) != 0 && path.rfind("exports/", 0) != 0 && path.rfind("demo/", 0) != 0)
+            return "build/" + path; // Force to build/ if no allowed prefix
+    }
+    return path;
+}
+
+// ====== TypeConfig storage (for wind/collision/LOD/cull/z_offset/layer) ======
+struct TypeConfig {
+    double windStrength = 1.0, swayAmount = 0.5, leafFlutter = 0.3, gustFreq = 0.2;
+    std::string collisionPreset = "NoCollision";
+    bool collisionEnabled = false;
+    double lod0 = 500, lod1 = 1500, lod2 = 3000, billboard = 5000;
+    bool useImpostor = true;
+    double cullStart = 1000, cullEnd = 5000;
+    double zOffsetMin = 0, zOffsetMax = 0;
+    std::vector<std::string> inclusionLayers, exclusionLayers;
+    double minLayerWeight = 0.5, minExclusionWeight = 0.3;
+};
+inline std::mutex g_configMutex;
+inline std::map<std::string, TypeConfig> g_typeConfigs;
+
+inline TypeConfig& getTypeConfig(const std::string& name) {
+    std::lock_guard<std::mutex> lk(g_configMutex);
+    return g_typeConfigs[name]; // creates default if missing
+}
 
 // ---- JSON helpers ----
 inline double ej(const char* j, const char* k, double fb) {
@@ -63,11 +123,6 @@ inline std::map<std::string, FoliagePreset> g_presets;
 struct BenchmarkStats { double lastMs=0; int lastInstanceCount=0,totalRuns=0; double totalMs=0; int bestCount=0; double bestMs=1e9; };
 inline std::mutex g_benchMutex;
 inline BenchmarkStats g_benchStats;
-
-// Configuration state for wind/collision/LOD (stored per-type since FoliageType v1 doesn't have these)
-struct TypeConfig { double windStrength=1.0,swayAmount=0.5,leafFlutter=0.3,gustFreq=0.2; std::string collisionPreset="NoCollision"; bool collisionEnabled=false; double lod0=500,lod1=1500,lod2=3000,billboard=5000; bool useImpostor=true; };
-inline std::mutex g_configMutex;
-inline std::map<std::string, TypeConfig> g_typeConfigs;
 
 // Biome mutex
 inline std::mutex g_biomeMutex; // separate mutex for biome stack

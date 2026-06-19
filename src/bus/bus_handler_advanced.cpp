@@ -128,7 +128,8 @@ MONTED_EXPORT int handle_jitterPositionsToBuf(const char* in, char* out, size_t 
 // 58. foliage_un06.export_instances_csv  (CSV export)
 // ======================================================================
 MONTED_EXPORT int handle_exportCSVToBuf(const char* in, char* out, size_t n) {
-    if(!out||n==0)return 6;std::string sk=ej_str(in,"storeKey","default"),path=ej_str(in,"path","build/instances_export.csv");
+    if(!out||n==0)return 6;std::string sk=ej_str(in,"storeKey","default"),path=validatePath(ej_str(in,"path","build/instances_export.csv"),true);
+    if(path.empty()){std::snprintf(out,n,"{\"code\":6,\"message\":\"invalid path\"}");return 0;}
     std::vector<foliage::FoliageInstance> insts;
     {std::lock_guard<std::mutex>lk(g_storeMutex);auto it=g_instanceStores.find(sk);if(it!=g_instanceStores.end())insts=it->second;}
     if(insts.empty()){double w=ej(in,"areaWidth",200),d=ej(in,"areaDepth",200);foliage::ScatterArea a;a.width=w;a.depth=d;insts=foliage::PoissonDiscScatter::Scatter(pickTerrain(in),overrideType(in,pickType(in)),a,1000,30);}

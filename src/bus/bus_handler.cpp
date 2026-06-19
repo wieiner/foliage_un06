@@ -765,7 +765,8 @@ MONTED_EXPORT int handle_analyzeToBuf(const char* in, char* out, size_t n)
 MONTED_EXPORT int handle_exportStateToBuf(const char* in, char* out, size_t n)
 {
     if (!out || n == 0) return 6;
-    std::string filepath = ej_str(in, "path", "foliage_state_export.json");
+    std::string filepath = validatePath(ej_str(in, "path", "foliage_state_export.json"), true);
+    if(filepath.empty()){ std::snprintf(out,n,"{\"code\":6,\"message\":\"invalid path — rejected for security\"}"); return 0; }
     std::string storeKey = ej_str(in, "storeKey", "default");
 
     // Gather types
@@ -836,7 +837,8 @@ MONTED_EXPORT int handle_exportStateToBuf(const char* in, char* out, size_t n)
 MONTED_EXPORT int handle_importStateToBuf(const char* in, char* out, size_t n)
 {
     if (!out || n == 0) return 6;
-    std::string filepath = ej_str(in, "path", "foliage_state_export.json");
+    std::string filepath = validatePath(ej_str(in, "path", "foliage_state_export.json"), false);
+    if(filepath.empty()){ std::snprintf(out,n,"{\"code\":6,\"message\":\"invalid path\"}"); return 0; }
     std::string storeKey = ej_str(in, "storeKey", "default");
 
     int typesLoaded = 0, instancesLoaded = 0;
@@ -933,64 +935,29 @@ MONTED_EXPORT int handle_densityFalloffToBuf(const char* in, char* out, size_t n
 MONTED_EXPORT int handle_layerMaskToBuf(const char* in, char* out, size_t n)
 {
     if (!out || n == 0) return 6;
-    std::string action = ej_str(in, "action", "set");
-    std::string typeName = ej_str(in, "type", "");
-    const foliage::FoliageType& base = pickType(in);
-
-    size_t pos = 0;
-    if (action == "set") {
-        foliage::FoliageType ft = overrideType(in, base);
-        // We store layer info in the type name's metadata via the registry
-        std::lock_guard<std::mutex> lock(g_typeMutex);
-        auto it = g_types.find(typeName.empty() ? "default" : typeName);
-        if (it != g_types.end() || !typeName.empty()) {
-            if (it == g_types.end()) { g_types[typeName] = ft; it = g_types.find(typeName); }
-            // Layer data is stored as part of the FoliageType (future: add layer fields)
-            pos += std::snprintf(out + pos, n - pos,
-                "{\"code\":0,\"message\":\"layer_mask_set\",\"type\":\"%s\",\"note\":\"use add_type to configure layer masks\"}",
-                it->second.name.c_str());
-        } else {
-            pos += std::snprintf(out + pos, n - pos, "{\"code\":7,\"message\":\"type_not_found\"}");
-        }
-    } else if (action == "filter") {
-        // Filter instances by layer mask
-        auto instances = parseInstances(in);
-        foliage::LayerMap layerMap;
-        // Parse inclusion/exclusion layers from payload
-        std::string incStr = ej_str(in, "inclusionLayers", "");
-        std::string excStr = ej_str(in, "exclusionLayers", "");
-        if (!incStr.empty()) {
-            // comma-separated
-            size_t start = 0, end;
-            while ((end = incStr.find(',', start)) != std::string::npos) {
-                layerMap.inclusionLayers.push_back(incStr.substr(start, end - start));
-                start = end + 1;
-            }
-            layerMap.inclusionLayers.push_back(incStr.substr(start));
-        }
-        if (!excStr.empty()) {
-            size_t start = 0, end;
-            while ((end = excStr.find(',', start)) != std::string::npos) {
-                layerMap.exclusionLayers.push_back(excStr.substr(start, end - start));
-                start = end + 1;
-            }
-            layerMap.exclusionLayers.push_back(excStr.substr(start));
-        }
-        layerMap.minInclusionWeight = ej(in, "minInclusionWeight", 0.5);
-        layerMap.minExclusionWeight = ej(in, "minExclusionWeight", 0.3);
-
+    std::string action=ej_str(in,"action","set"),tn=ej_str(in,"type","grass_default");
+    if(action=="set"){
+        TypeConfig& c=getTypeConfig(tn);
+        c.inclusionLayers.clear(); c.exclusionLayers.clear();
+        std::string inc=ej_str(in,"inclusionLayers",""),exc=ej_str(in,"exclusionLayers","");
+        if(!inc.empty()){ size_t s=0,e; while((e=inc.find(',',s))!=std::string::npos){c.inclusionLayers.push_back(inc.substr(s,e-s));s=e+1;} c.inclusionLayers.push_back(inc.substr(s)); }
+        if(!exc.empty()){ size_t s=0,e; while((e=exc.find(',',s))!=std::string::npos){c.exclusionLayers.push_back(exc.substr(s,e-s));s=e+1;} c.exclusionLayers.push_back(exc.substr(s)); }
+        c.minLayerWeight=ej(in,"minInclusionWeight",c.minLayerWeight);
+        c.minExclusionWeight=ej(in,"minExclusionWeight",c.minExclusionWeight);
+        std::snprintf(out,n,"{\"code\":0,\"message\":\"layer_mask_set\",\"type\":\"%s\",\"inclusionLayers\":%zu,\"exclusionLayers\":%zu}",tn.c_str(),c.inclusionLayers.size(),c.exclusionLayers.size());
+    } else if(action=="filter"){
+        auto instances=parseInstances(in);
+        foliage::LayerMap map;
+        TypeConfig& c=getTypeConfig(tn);
+        map.inclusionLayers=c.inclusionLayers; map.exclusionLayers=c.exclusionLayers;
+        map.minInclusionWeight=c.minLayerWeight; map.minExclusionWeight=c.minExclusionWeight;
         std::vector<foliage::FoliageInstance> survivors;
-        for (const auto& inst : instances) {
-            if (layerMap.Passes(inst.x, inst.z)) survivors.push_back(inst);
-        }
-        pos += std::snprintf(out + pos, n - pos,
-            "{\"code\":0,\"message\":\"layer_filtered\",\"total\":%zu,\"survivors\":%zu,\"removed\":%zu}",
-            instances.size(), survivors.size(), instances.size() - survivors.size());
+        for(const auto&inst:instances){ if(map.Passes(inst.x,inst.z)) survivors.push_back(inst); }
+        std::snprintf(out,n,"{\"code\":0,\"message\":\"layer_filtered\",\"total\":%zu,\"survivors\":%zu,\"removed\":%zu}",instances.size(),survivors.size(),instances.size()-survivors.size());
     } else {
-        pos += std::snprintf(out + pos, n - pos,
-            "{\"code\":0,\"message\":\"layer_info\",\"actions\":[\"set\",\"filter\"]}");
+        TypeConfig& c=getTypeConfig(tn);
+        std::snprintf(out,n,"{\"code\":0,\"message\":\"layer_info\",\"type\":\"%s\",\"inclusionLayers\":%zu,\"exclusionLayers\":%zu}",tn.c_str(),c.inclusionLayers.size(),c.exclusionLayers.size());
     }
-    out[pos] = '\0';
     return 0;
 }
 
@@ -1049,72 +1016,36 @@ MONTED_EXPORT int handle_noiseModulateToBuf(const char* in, char* out, size_t n)
 MONTED_EXPORT int handle_zOffsetToBuf(const char* in, char* out, size_t n)
 {
     if (!out || n == 0) return 6;
-    std::string action = ej_str(in, "action", "set");
-    const double zMin = ej(in, "zOffsetMin", 0.0), zMax = ej(in, "zOffsetMax", 10.0);
-    std::string typeName = ej_str(in, "type", "");
-    const foliage::FoliageType& base = pickType(in);
-
-    size_t pos = 0;
+    std::string action = ej_str(in, "action", "set"), tn = ej_str(in, "type", "grass_default");
     if (action == "set") {
-        foliage::FoliageType ft = overrideType(in, base);
-        std::lock_guard<std::mutex> lock(g_typeMutex);
-        auto it = g_types.find(typeName.empty() ? base.name : typeName);
-        if (it != g_types.end()) {
-            // Store Z offset in the type (not a direct field, but we update via add_type)
-            pos += std::snprintf(out + pos, n - pos,
-                "{\"code\":0,\"message\":\"z_offset_set\",\"type\":\"%s\",\"zOffsetRange\":[%.1f,%.1f],"
-                "\"note\":\"Z offset range stored; apply via scatter/paint with zOffsetMin/zOffsetMax params\"}",
-                it->second.name.c_str(), zMin, zMax);
-        }
+        TypeConfig& c = getTypeConfig(tn);
+        c.zOffsetMin = ej(in, "zOffsetMin", c.zOffsetMin);
+        c.zOffsetMax = ej(in, "zOffsetMax", c.zOffsetMax);
+        std::snprintf(out,n,"{\"code\":0,\"message\":\"z_offset_set\",\"type\":\"%s\",\"zOffsetRange\":[%.1f,%.1f]}",tn.c_str(),c.zOffsetMin,c.zOffsetMax);
     } else if (action == "apply") {
         auto instances = parseInstances(in);
-        foliage::FoliagePrng prng((unsigned)ej(in, "seed", 1337));
-        for (auto& inst : instances) {
-            inst.y += prng.NextRange(zMin, zMax);
-        }
-        pos += std::snprintf(out + pos, n - pos,
-            "{\"code\":0,\"message\":\"z_offset_applied\",\"count\":%zu,\"range\":[%.1f,%.1f]}",
-            instances.size(), zMin, zMax);
+        TypeConfig& c = getTypeConfig(tn);
+        foliage::FoliagePrng prng((unsigned)ej(in,"seed",1337));
+        for(auto&inst:instances) inst.y+=prng.NextRange(c.zOffsetMin,c.zOffsetMax);
+        std::snprintf(out,n,"{\"code\":0,\"message\":\"z_offset_applied\",\"count\":%zu,\"range\":[%.1f,%.1f]}",instances.size(),c.zOffsetMin,c.zOffsetMax);
     } else {
-        pos += std::snprintf(out + pos, n - pos,
-            "{\"code\":0,\"message\":\"z_offset_info\",\"actions\":[\"set\",\"apply\"]}");
+        TypeConfig& c = getTypeConfig(tn);
+        std::snprintf(out,n,"{\"code\":0,\"message\":\"z_offset_info\",\"type\":\"%s\",\"data\":{\"zOffsetRange\":[%.1f,%.1f]}}",tn.c_str(),c.zOffsetMin,c.zOffsetMax);
     }
-    out[pos] = '\0';
     return 0;
 }
-
-// ======================================================================
-// 21. foliage_un06.cull_distance  (set/get cull distance per type)
-// ======================================================================
+// 21. cull_distance
 MONTED_EXPORT int handle_cullDistanceToBuf(const char* in, char* out, size_t n)
 {
     if (!out || n == 0) return 6;
-    std::string action = ej_str(in, "action", "get");
-    const double startDist = ej(in, "startCullDistance", 1000.0);
-    const double endDist   = ej(in, "endCullDistance", 5000.0);
-
-    size_t pos = 0;
-    if (action == "set") {
-        std::string typeName = ej_str(in, "type", "");
-        const foliage::FoliageType& base = pickType(in);
-        foliage::FoliageType ft = overrideType(in, base);
-        // Store in registry
-        std::lock_guard<std::mutex> lock(g_typeMutex);
-        auto it = g_types.find(typeName.empty() ? "default" : typeName);
-        if (it != g_types.end()) {
-            pos += std::snprintf(out + pos, n - pos,
-                "{\"code\":0,\"message\":\"cull_distance_set\",\"type\":\"%s\","
-                "\"startCullDistance\":%.0f,\"endCullDistance\":%.0f}",
-                it->second.name.c_str(), startDist, endDist);
-        }
+    std::string action=ej_str(in,"action","get"),tn=ej_str(in,"type","grass_default");
+    TypeConfig& c=getTypeConfig(tn);
+    if(action=="set"){
+        c.cullStart=ej(in,"startCullDistance",c.cullStart); c.cullEnd=ej(in,"endCullDistance",c.cullEnd);
+        std::snprintf(out,n,"{\"code\":0,\"message\":\"cull_distance_set\",\"type\":\"%s\",\"start\":%.0f,\"end\":%.0f}",tn.c_str(),c.cullStart,c.cullEnd);
     } else {
-        pos += std::snprintf(out + pos, n - pos,
-            "{\"code\":0,\"message\":\"cull_info\","
-            "\"note\":\"Cull distances are per-FoliageType. Use add_type to configure lodCullDistance.\","
-            "\"currentDefaults\":{\"startCullDistance\":%.0f,\"endCullDistance\":%.0f}}",
-            startDist, endDist);
+        std::snprintf(out,n,"{\"code\":0,\"message\":\"cull_distance_info\",\"type\":\"%s\",\"data\":{\"start\":%.0f,\"end\":%.0f}}",tn.c_str(),c.cullStart,c.cullEnd);
     }
-    out[pos] = '\0';
     return 0;
 }
 
@@ -1821,54 +1752,48 @@ MONTED_EXPORT int handle_transformInstancesToBuf(const char* in, char* out, size
 // ======================================================================
 MONTED_EXPORT int handle_windParamsToBuf(const char* in, char* out, size_t n) {
     if (!out || n == 0) return 6;
-    std::string action=ej_str(in,"action","get");
-    size_t pos=0;
+    std::string action=ej_str(in,"action","get"); std::string tn=ej_str(in,"type","grass_default");
     if(action=="set"){
-        std::string tn=ej_str(in,"type","grass_default");
-        double strength=ej(in,"windStrength",1.0), sway=ej(in,"swayAmount",0.5);
-        double flutter=ej(in,"leafFlutter",0.3), gustFreq=ej(in,"gustFrequency",0.2);
-        pos+=std::snprintf(out+pos,n-pos,"{\"code\":0,\"message\":\"wind_params_set\",\"type\":\"%s\",\"strength\":%.2f,\"sway\":%.2f,\"flutter\":%.2f,\"gustFreq\":%.2f}",tn.c_str(),strength,sway,flutter,gustFreq);
+        TypeConfig& c=getTypeConfig(tn);
+        c.windStrength=ej(in,"windStrength",c.windStrength); c.swayAmount=ej(in,"swayAmount",c.swayAmount);
+        c.leafFlutter=ej(in,"leafFlutter",c.leafFlutter); c.gustFreq=ej(in,"gustFrequency",c.gustFreq);
+        std::snprintf(out,n,"{\"code\":0,\"message\":\"wind_params_set\",\"type\":\"%s\",\"strength\":%.2f,\"sway\":%.2f,\"flutter\":%.2f,\"gustFreq\":%.2f}",tn.c_str(),c.windStrength,c.swayAmount,c.leafFlutter,c.gustFreq);
     } else {
-        pos+=std::snprintf(out+pos,n-pos,"{\"code\":0,\"message\":\"wind_params\",\"defaults\":{\"strength\":1.0,\"sway\":0.5,\"flutter\":0.3,\"gustFrequency\":0.2},\"modes\":[\"set\",\"get\"]}");
+        TypeConfig& c=getTypeConfig(tn);
+        std::snprintf(out,n,"{\"code\":0,\"message\":\"wind_params\",\"type\":\"%s\",\"data\":{\"strength\":%.2f,\"sway\":%.2f,\"flutter\":%.2f,\"gustFreq\":%.2f}}",tn.c_str(),c.windStrength,c.swayAmount,c.leafFlutter,c.gustFreq);
     }
-    out[pos]='\0'; return 0;
+    return 0;
 }
-
-// ======================================================================
-// 39. foliage_un06.collision_settings  (collision per FoliageType)
-// ======================================================================
+// 39. collision_settings
 MONTED_EXPORT int handle_collisionSettingsToBuf(const char* in, char* out, size_t n) {
     if (!out || n == 0) return 6;
-    std::string action=ej_str(in,"action","get");
-    size_t pos=0;
+    std::string action=ej_str(in,"action","get"), tn=ej_str(in,"type","grass_default");
     if(action=="set"){
-        std::string tn=ej_str(in,"type","grass_default");
-        bool enabled=ej_bool(in,"collisionEnabled",false);
-        std::string preset=ej_str(in,"collisionPreset","NoCollision");
-        pos+=std::snprintf(out+pos,n-pos,"{\"code\":0,\"message\":\"collision_set\",\"type\":\"%s\",\"enabled\":%s,\"preset\":\"%s\"}",tn.c_str(),enabled?"true":"false",preset.c_str());
+        TypeConfig& c=getTypeConfig(tn);
+        c.collisionEnabled=ej_bool(in,"collisionEnabled",c.collisionEnabled);
+        c.collisionPreset=ej_str(in,"collisionPreset",c.collisionPreset);
+        std::snprintf(out,n,"{\"code\":0,\"message\":\"collision_set\",\"type\":\"%s\",\"enabled\":%s,\"preset\":\"%s\"}",tn.c_str(),c.collisionEnabled?"true":"false",c.collisionPreset.c_str());
     } else {
-        pos+=std::snprintf(out+pos,n-pos,"{\"code\":0,\"message\":\"collision_info\",\"presets\":[\"NoCollision\",\"BlockAll\",\"OverlapAll\",\"BlockAllDynamic\",\"OverlapAllDynamic\"],\"modes\":[\"set\",\"get\"]}");
+        TypeConfig& c=getTypeConfig(tn);
+        std::snprintf(out,n,"{\"code\":0,\"message\":\"collision_info\",\"type\":\"%s\",\"data\":{\"enabled\":%s,\"preset\":\"%s\"}}",tn.c_str(),c.collisionEnabled?"true":"false",c.collisionPreset.c_str());
     }
-    out[pos]='\0'; return 0;
+    return 0;
 }
-
-// ======================================================================
-// 40. foliage_un06.lod_config  (LOD distance configuration)
-// ======================================================================
+// 40. lod_config
 MONTED_EXPORT int handle_lodConfigToBuf(const char* in, char* out, size_t n) {
     if (!out || n == 0) return 6;
-    std::string action=ej_str(in,"action","get");
-    size_t pos=0;
+    std::string action=ej_str(in,"action","get"), tn=ej_str(in,"type","grass_default");
     if(action=="set"){
-        std::string tn=ej_str(in,"type","grass_default");
-        double l0=ej(in,"lod0Dist",500), l1=ej(in,"lod1Dist",1500);
-        double l2=ej(in,"lod2Dist",3000), billboard=ej(in,"billboardDist",5000);
-        bool impostors=ej_bool(in,"useImpostors",true);
-        pos+=std::snprintf(out+pos,n-pos,"{\"code\":0,\"message\":\"lod_set\",\"type\":\"%s\",\"lods\":[%.0f,%.0f,%.0f],\"billboardDist\":%.0f,\"impostors\":%s}",tn.c_str(),l0,l1,l2,billboard,impostors?"true":"false");
+        TypeConfig& c=getTypeConfig(tn);
+        c.lod0=ej(in,"lod0Dist",c.lod0); c.lod1=ej(in,"lod1Dist",c.lod1);
+        c.lod2=ej(in,"lod2Dist",c.lod2); c.billboard=ej(in,"billboardDist",c.billboard);
+        c.useImpostor=ej_bool(in,"useImpostors",c.useImpostor);
+        std::snprintf(out,n,"{\"code\":0,\"message\":\"lod_set\",\"type\":\"%s\",\"lods\":[%.0f,%.0f,%.0f],\"billboard\":%.0f,\"impostors\":%s}",tn.c_str(),c.lod0,c.lod1,c.lod2,c.billboard,c.useImpostor?"true":"false");
     } else {
-        pos+=std::snprintf(out+pos,n-pos,"{\"code\":0,\"message\":\"lod_config\",\"defaults\":{\"lod0\":500,\"lod1\":1500,\"lod2\":3000,\"billboard\":5000,\"impostors\":true},\"modes\":[\"set\",\"get\"]}");
+        TypeConfig& c=getTypeConfig(tn);
+        std::snprintf(out,n,"{\"code\":0,\"message\":\"lod_config\",\"type\":\"%s\",\"data\":{\"lod0\":%.0f,\"lod1\":%.0f,\"lod2\":%.0f,\"billboard\":%.0f,\"impostors\":%s}}",tn.c_str(),c.lod0,c.lod1,c.lod2,c.billboard,c.useImpostor?"true":"false");
     }
-    out[pos]='\0'; return 0;
+    return 0;
 }
 
 // ======================================================================
