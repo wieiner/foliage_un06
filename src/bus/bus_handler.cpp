@@ -41,321 +41,7 @@
 #define MONTED_EXPORT extern "C"
 #endif
 
-namespace {
-
-// -----------------------------------------------------------------------
-// JSON helpers (lightweight, dependency-free)
-// -----------------------------------------------------------------------
-double ej(const char* j, const char* k, double fb) {
-    if (!j) return fb;
-    char pat[64];
-    std::snprintf(pat, sizeof(pat), "\"%s\"", k);
-    const char* s = std::strstr(j, pat);
-    if (!s) return fb;
-    const char* c = std::strchr(s + std::strlen(pat), ':');
-    return c ? std::atof(c + 1) : fb;
-}
-
-bool ej_bool(const char* j, const char* k, bool fb) {
-    if (!j) return fb;
-    char pat[64];
-    std::snprintf(pat, sizeof(pat), "\"%s\"", k);
-    const char* s = std::strstr(j, pat);
-    if (!s) return fb;
-    const char* c = s + std::strlen(pat);
-    while (*c == ':' || *c == ' ' || *c == '\t') ++c;
-    return (c[0] == 't' && c[1] == 'r' && c[2] == 'u' && c[3] == 'e');
-}
-
-std::string ej_str(const char* j, const char* k, const std::string& fb) {
-    if (!j) return fb;
-    char pat[64];
-    std::snprintf(pat, sizeof(pat), "\"%s\"", k);
-    const char* s = std::strstr(j, pat);
-    if (!s) return fb;
-    const char* c = s + std::strlen(pat);
-    while (*c == ':' || *c == ' ' || *c == '\t') ++c;
-    if (*c != '"') return fb;
-    ++c;
-    const char* e = std::strchr(c, '"');
-    if (!e) return fb;
-    return std::string(c, e - c);
-}
-
-// Parse JSON array of integers: [1,2,3]
-std::vector<int> ej_intArray(const char* j, const char* k) {
-    std::vector<int> result;
-    if (!j) return result;
-    char pat[64]; std::snprintf(pat, sizeof(pat), "\"%s\"", k);
-    const char* s = std::strstr(j, pat);
-    if (!s) return result;
-    const char* c = s + std::strlen(pat);
-    while (*c == ':' || *c == ' ' || *c == '\t') ++c;
-    if (*c != '[') return result;
-    ++c;
-    while (*c && *c != ']') {
-        while (*c == ' ' || *c == ',' || *c == '\n') ++c;
-        if (*c == ']' || !*c) break;
-        int val = 0, sign = 1;
-        if (*c == '-') { sign = -1; ++c; }
-        while (*c >= '0' && *c <= '9') { val = val * 10 + (*c - '0'); ++c; }
-        result.push_back(val * sign);
-    }
-    return result;
-}
-
-// Parse JSON array of doubles
-std::vector<double> ej_doubleArray(const char* j, const char* k) {
-    std::vector<double> result;
-    if (!j) return result;
-    char pat[64]; std::snprintf(pat, sizeof(pat), "\"%s\"", k);
-    const char* s = std::strstr(j, pat);
-    if (!s) return result;
-    const char* c = s + std::strlen(pat);
-    while (*c == ':' || *c == ' ' || *c == '\t') ++c;
-    if (*c != '[') return result;
-    ++c;
-    while (*c && *c != ']') {
-        while (*c == ' ' || *c == ',' || *c == '\n') ++c;
-        if (*c == ']' || !*c) break;
-        char* end = nullptr;
-        double val = std::strtod(c, &end);
-        if (end == c) break;
-        result.push_back(val);
-        c = end;
-    }
-    return result;
-}
-
-// Thread-safe foliage type registry
-std::mutex g_typeMutex;
-std::map<std::string, foliage::FoliageType> g_types;
-
-foliage::FoliageType g_defaultType;
-
-// In-memory instance store for stateful commands (keyed by session/user)
-std::mutex g_storeMutex;
-std::map<std::string, std::vector<foliage::FoliageInstance>> g_instanceStores;
-
-// Exclusion zones (global, shared across commands)
-std::mutex g_zoneMutex;
-foliage::ExclusionZoneSet g_exclusionZones;
-
-// Spline paths
-std::mutex g_splineMutex;
-std::vector<foliage::SplinePath> g_splines;
-
-// Checkpoint system for undo
-std::mutex g_checkpointMutex;
-std::map<std::string, std::vector<std::string>> g_checkpoints; // storeKey -> list of JSON snapshots
-
-// Preset system
-std::mutex g_presetMutex;
-struct FoliagePreset {
-    std::string name;
-    std::string description;
-    std::vector<std::string> foliageTypeNames;
-    double areaWidth = 200, areaDepth = 200;
-    double densityMul = 1.0;
-    double slopeMax = 35.0;
-};
-std::map<std::string, FoliagePreset> g_presets;
-
-// Benchmark stats
-struct BenchmarkStats {
-    double lastMs = 0;
-    int lastInstanceCount = 0;
-    int totalRuns = 0;
-    double totalMs = 0;
-    int bestCount = 0;
-    double bestMs = 1e9;
-};
-std::mutex g_benchMutex;
-BenchmarkStats g_benchStats;
-
-void ensureDefaultTypes() {
-    if (g_types.empty()) {
-        foliage::FoliageType grass;
-        grass.name        = "grass_default";
-        grass.meshId      = "cross_billboard";
-        grass.density     = 0.15;
-        grass.scaleMin    = 0.5;
-        grass.scaleMax    = 1.2;
-        grass.slopeMax    = 45.0;
-        grass.seed        = 1337;
-        grass.randomRotation = true;
-        grass.alignToNormal  = true;
-        g_types[grass.name] = grass;
-
-        foliage::FoliageType tree;
-        tree.name        = "tree_pine";
-        tree.meshId      = "cube";
-        tree.density     = 0.005;
-        tree.scaleMin    = 0.9;
-        tree.scaleMax    = 1.6;
-        tree.slopeMax    = 35.0;
-        tree.heightMin   = 0.0;
-        tree.heightMax   = 50.0;
-        tree.seed        = 42;
-        tree.randomRotation = true;
-        tree.alignToNormal  = true;
-        g_types[tree.name] = tree;
-
-        foliage::FoliageType bush;
-        bush.name        = "bush_default";
-        bush.meshId      = "cube";
-        bush.density     = 0.08;
-        bush.scaleMin    = 0.4;
-        bush.scaleMax    = 1.0;
-        bush.slopeMax    = 50.0;
-        bush.seed        = 777;
-        bush.randomRotation = true;
-        bush.alignToNormal  = true;
-        g_types[bush.name] = bush;
-
-        g_defaultType = grass;
-    }
-}
-
-foliage::SyntheticTerrain g_syntheticTerrain;
-foliage::FlatTerrain     g_flatTerrain;
-
-foliage::TerrainSampler& pickTerrain(const char* payload) {
-    std::string terrainMode = ej_str(payload, "terrain", "synthetic");
-    if (terrainMode == "flat") return g_flatTerrain;
-    return g_syntheticTerrain;
-}
-
-const foliage::FoliageType& pickType(const char* payload) {
-    std::string typeName = ej_str(payload, "type", "grass_default");
-    ensureDefaultTypes();
-    auto it = g_types.find(typeName);
-    if (it != g_types.end()) return it->second;
-    return g_defaultType;
-}
-
-foliage::FoliageType overrideType(const char* payload, const foliage::FoliageType& base) {
-    foliage::FoliageType ft = base;
-    if (ej(payload, "density", -1) >= 0)       ft.density  = ej(payload, "density", base.density);
-    if (ej(payload, "scaleMin", -1) >= 0)      ft.scaleMin = ej(payload, "scaleMin", base.scaleMin);
-    if (ej(payload, "scaleMax", -1) >= 0)      ft.scaleMax = ej(payload, "scaleMax", base.scaleMax);
-    if (ej(payload, "slopeMax", -999) > -998)  ft.slopeMax = ej(payload, "slopeMax", base.slopeMax);
-    if (ej(payload, "heightMin", -1e99) > -1e98) ft.heightMin = ej(payload, "heightMin", base.heightMin);
-    if (ej(payload, "heightMax", -1e99) > -1e98) ft.heightMax = ej(payload, "heightMax", base.heightMax);
-    if (ej(payload, "seed", -1) >= 0)          ft.seed = static_cast<std::uint32_t>(ej(payload, "seed", (double)base.seed));
-    if (ej(payload, "radius", -1) >= 0)        ft.radius = ej(payload, "radius", base.radius);
-    if (std::strstr(payload, "\"randomRotation\"")) ft.randomRotation = ej_bool(payload, "randomRotation", base.randomRotation);
-    if (std::strstr(payload, "\"alignToNormal\""))  ft.alignToNormal = ej_bool(payload, "alignToNormal", base.alignToNormal);
-    return ft;
-}
-
-void parseTypeFromJson(const char* json) {
-    foliage::FoliageType ft;
-    ft.name           = ej_str(json, "name", "custom");
-    ft.meshId         = ej_str(json, "meshId", "cube");
-    ft.density        = ej(json, "density", 0.02);
-    ft.scaleMin       = ej(json, "scaleMin", 0.8);
-    ft.scaleMax       = ej(json, "scaleMax", 1.4);
-    ft.uniformScale   = ej_bool(json, "uniformScale", true);
-    ft.randomRotation = ej_bool(json, "randomRotation", true);
-    ft.alignToNormal  = ej_bool(json, "alignToNormal", true);
-    ft.rotationMin    = ej(json, "rotationMin", 0.0);
-    ft.rotationMax    = ej(json, "rotationMax", 360.0);
-    ft.slopeMax       = ej(json, "slopeMax", 35.0);
-    ft.heightMin      = ej(json, "heightMin", -1e9);
-    ft.heightMax      = ej(json, "heightMax", 1e9);
-    ft.seed           = static_cast<std::uint32_t>(ej(json, "seed", 1337));
-    ft.radius         = ej(json, "radius", 0.0);
-    std::lock_guard<std::mutex> lock(g_typeMutex);
-    g_types[ft.name] = ft;
-}
-
-// Parse instances from JSON array [[x,y,z,sx,sy,sz,yaw],...]
-std::vector<foliage::FoliageInstance> parseInstances(const char* json) {
-    std::vector<foliage::FoliageInstance> result;
-    if (!json) return result;
-    const char* s = std::strstr(json, "\"instances\"");
-    if (!s) return result;
-    const char* c = s;
-    while (*c && *c != '[') ++c;
-    if (!*c) return result;
-    ++c; // skip '['
-    while (*c) {
-        while (*c == ' ' || *c == ',' || *c == '\n' || *c == '\r') ++c;
-        if (*c == ']' || !*c) break;
-        if (*c != '[') { ++c; continue; }
-        ++c; // skip inner '['
-        double vals[7] = {};
-        for (int i = 0; i < 7; ++i) {
-            while (*c == ' ' || *c == ',') ++c;
-            char* end = nullptr;
-            vals[i] = std::strtod(c, &end);
-            if (end == c) break;
-            c = end;
-        }
-        while (*c && *c != ']') ++c;
-        if (*c == ']') ++c;
-        foliage::FoliageInstance inst;
-        inst.x = vals[0]; inst.y = vals[1]; inst.z = vals[2];
-        inst.scaleX = vals[3]; inst.scaleY = vals[4]; inst.scaleZ = vals[5];
-        inst.yaw = vals[6];
-        result.push_back(inst);
-    }
-    return result;
-}
-
-void writeInstanceJson(const std::vector<foliage::FoliageInstance>& instances,
-                       char* buf, size_t& pos, size_t n, int maxInstances)
-{
-    int count = static_cast<int>(instances.size());
-    int step  = 1;
-    if (count > maxInstances) { step = count / maxInstances; if (step < 1) step = 1; }
-    pos += std::snprintf(buf + pos, n - pos, "\"instances\":[");
-    bool first = true;
-    for (int i = 0; i < count; i += step) {
-        if (pos >= n - 80) break;
-        const auto& inst = instances[i];
-        if (!first) buf[pos++] = ',';
-        first = false;
-        pos += std::snprintf(buf + pos, n - pos,
-            "[%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%.4f]",
-            inst.x, inst.y, inst.z, inst.scaleX, inst.scaleY, inst.scaleZ, inst.yaw);
-    }
-    buf[pos++] = ']';
-}
-
-void writeMeshSummary(char* buf, size_t& pos, size_t n,
-                      int totalVerts, int totalIndices, int totalTriangles,
-                      double bmin[3], double bmax[3])
-{
-    pos += std::snprintf(buf + pos, n - pos,
-        ",\"mesh\":{"
-        "\"vertexCount\":%d,\"indexCount\":%d,\"triangleCount\":%d,"
-        "\"boundsMin\":[%.2f,%.2f,%.2f],\"boundsMax\":[%.2f,%.2f,%.2f],"
-        "\"boundingBox\":[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f]"
-        "}",
-        totalVerts, totalIndices, totalTriangles,
-        bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2],
-        bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2]);
-}
-
-// Escape string for JSON
-std::string jsonEscape(const std::string& s) {
-    std::string out;
-    for (char c : s) {
-        switch (c) {
-            case '"': out += "\\\""; break;
-            case '\\': out += "\\\\"; break;
-            case '\n': out += "\\n"; break;
-            case '\r': out += "\\r"; break;
-            case '\t': out += "\\t"; break;
-            default: out += c;
-        }
-    }
-    return out;
-}
-
-} // namespace
+#include "bus_handler_state.h"
 
 // ====== External entry point declarations ======
 MONTED_EXPORT int handle_scatterToBuf(const char* in, char* out, size_t n);
@@ -411,6 +97,16 @@ MONTED_EXPORT int handle_validatePayloadToBuf(const char* in, char* out, size_t 
 MONTED_EXPORT int handle_diffStoresToBuf(const char* in, char* out, size_t n);
 MONTED_EXPORT int handle_exportEnginePayloadToBuf(const char* in, char* out, size_t n);
 MONTED_EXPORT int handle_densityHeatmapToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_computeBoundsToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_autoLODToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_groupByClusterToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_jitterPositionsToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_exportCSVToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_snapToTerrainToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_removeOutliersToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_coverageAnalysisToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_pipelineToBuf(const char* in, char* out, size_t n);
+MONTED_EXPORT int handle_storeMemoryToBuf(const char* in, char* out, size_t n);
 
 // ======================================================================
 // 1. foliage_un06.scatter (structured parser — v0.5.0)
@@ -2388,6 +2084,7 @@ MONTED_EXPORT int handle_densityHeatmapToBuf(const char* in, char* out, size_t n
     pos+=std::snprintf(out+pos,n-pos,"]}");out[pos]='\0';return 0;
 }
 
+
 // ====== Legacy descriptor ======
 MONTED_EXPORT const char* MontEd_GetBusHandlerDescriptor()
 {
@@ -2395,11 +2092,13 @@ MONTED_EXPORT const char* MontEd_GetBusHandlerDescriptor()
            "\"entry_point\":\"handle_scatterToBuf\","
            "\"schema\":\"\","
            "\"version\":\"0.5.0\","
-           "\"commandCount\":53,"
-           "\"description\":\"Foliage scatter system v0.5.0: 53 commands. "
+           "\"commandCount\":63,"
+           "\"description\":\"Foliage scatter system v0.5.0: 63 commands. "
            "Deterministic Poisson-disc placement, brush paint/erase, ecosystem simulation, "
            "spatial query, biome zones, patterns (radial/path/clump), masks, noise, "
            "statistics, LOD/wind/collision config, multi-type scatter, selection, "
-           "store management, reseed, validation, diff, engine payload, heatmap. "
+           "store management, reseed, validation, diff, engine payload, heatmap, "
+           "bounds, auto LOD, cluster groups, jitter, CSV export, snap to terrain, "
+           "outlier removal, coverage analysis, pipeline, memory estimation. "
            "Backs onto instmesh_un05 for ISM rendering.\"}";
 }

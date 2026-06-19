@@ -34,6 +34,7 @@ Write-Host "[1/3] Building foliage_un06.dll ..." -ForegroundColor Green
 $cppFiles = @(
     'src\core_abi\core_entry.cpp',
     'src\bus\bus_handler.cpp',
+    'src\bus\bus_handler_advanced.cpp',
     'src\common\foliage_json.cpp',
     'src\common\foliage_scatter.cpp',
     'src\common\foliage_paint.cpp',
@@ -51,7 +52,7 @@ $cppFiles = @(
 $srcArgs = ($cppFiles | ForEach-Object { '"' + (Join-Path $root $_) + '"' }) -join ' '
 $dllOut = Join-Path $OutDir "$name.dll"
 
-$dllCmd = "cl /nologo /std:c++17 /O2 /MD /EHsc /LD $srcArgs /link /OUT:`"$dllOut`""
+$dllCmd = "cl /nologo /std:c++17 /O2 /MT /EHsc /bigobj /LD $srcArgs /link /OUT:`"$dllOut`""
 $fullCmd = "cd /d `"$root`" && $vcEnv && $dllCmd"
 
 cmd /c $fullCmd
@@ -88,7 +89,7 @@ $guiCommonCpp = @(
 $guiSrcArgs = ($guiCommonCpp | ForEach-Object { '"' + (Join-Path $root $_) + '"' }) -join ' '
 $guiSrcArgs = "`"$guiCpp`" $guiSrcArgs"
 
-$guiCmd = "cl /nologo /std:c++17 /O2 /MD /EHsc $guiSrcArgs /link /SUBSYSTEM:WINDOWS /OUT:`"$guiExe`" user32.lib gdi32.lib comctl32.lib"
+$guiCmd = "cl /nologo /std:c++17 /O2 /MT /EHsc /bigobj $guiSrcArgs /link /SUBSYSTEM:WINDOWS /OUT:`"$guiExe`" user32.lib gdi32.lib comctl32.lib"
 $fullGuiCmd = "cd /d `"$root`" && $vcEnv && $guiCmd"
 
 cmd /c $fullGuiCmd
@@ -117,7 +118,7 @@ $goldenCommonCpp = @(
 $goldenSrcArgs = ($goldenCommonCpp | ForEach-Object { '"' + (Join-Path $root $_) + '"' }) -join ' '
 $goldenSrcArgs = "`"$goldenCpp`" $goldenSrcArgs"
 
-$goldenCmd = "cl /nologo /std:c++17 /O2 /MD /EHsc $goldenSrcArgs /link /OUT:`"$goldenExe`""
+$goldenCmd = "cl /nologo /std:c++17 /O2 /MT /EHsc /bigobj $goldenSrcArgs /link /OUT:`"$goldenExe`""
 $fullGoldenCmd = "cd /d `"$root`" && $vcEnv && $goldenCmd"
 
 cmd /c $fullGoldenCmd

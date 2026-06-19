@@ -87,6 +87,16 @@ extern "C" {
     int handle_diffStoresToBuf(const char* in, char* out, size_t n);
     int handle_exportEnginePayloadToBuf(const char* in, char* out, size_t n);
     int handle_densityHeatmapToBuf(const char* in, char* out, size_t n);
+    int handle_computeBoundsToBuf(const char* in, char* out, size_t n);
+    int handle_autoLODToBuf(const char* in, char* out, size_t n);
+    int handle_groupByClusterToBuf(const char* in, char* out, size_t n);
+    int handle_jitterPositionsToBuf(const char* in, char* out, size_t n);
+    int handle_exportCSVToBuf(const char* in, char* out, size_t n);
+    int handle_snapToTerrainToBuf(const char* in, char* out, size_t n);
+    int handle_removeOutliersToBuf(const char* in, char* out, size_t n);
+    int handle_coverageAnalysisToBuf(const char* in, char* out, size_t n);
+    int handle_pipelineToBuf(const char* in, char* out, size_t n);
+    int handle_storeMemoryToBuf(const char* in, char* out, size_t n);
 }
 
 // ---- V4 Plugin API ----------------------------------------------------
@@ -241,7 +251,17 @@ foliage_getBusHandlersJson(char* out, std::uint32_t outSize, std::uint32_t* requ
         "{\"commandId\":\"foliage_un06.validate_payload\",\"entryPoint\":\"handle_validatePayloadToBuf\"},"
         "{\"commandId\":\"foliage_un06.diff_stores\",\"entryPoint\":\"handle_diffStoresToBuf\"},"
         "{\"commandId\":\"foliage_un06.export_engine_payload\",\"entryPoint\":\"handle_exportEnginePayloadToBuf\"},"
-        "{\"commandId\":\"foliage_un06.density_heatmap\",\"entryPoint\":\"handle_densityHeatmapToBuf\"}"
+        "{\"commandId\":\"foliage_un06.density_heatmap\",\"entryPoint\":\"handle_densityHeatmapToBuf\"},"
+        "{\"commandId\":\"foliage_un06.compute_bounds\",\"entryPoint\":\"handle_computeBoundsToBuf\"},"
+        "{\"commandId\":\"foliage_un06.auto_lod\",\"entryPoint\":\"handle_autoLODToBuf\"},"
+        "{\"commandId\":\"foliage_un06.group_by_cluster\",\"entryPoint\":\"handle_groupByClusterToBuf\"},"
+        "{\"commandId\":\"foliage_un06.jitter_positions\",\"entryPoint\":\"handle_jitterPositionsToBuf\"},"
+        "{\"commandId\":\"foliage_un06.export_instances_csv\",\"entryPoint\":\"handle_exportCSVToBuf\"},"
+        "{\"commandId\":\"foliage_un06.snap_to_terrain\",\"entryPoint\":\"handle_snapToTerrainToBuf\"},"
+        "{\"commandId\":\"foliage_un06.remove_outliers\",\"entryPoint\":\"handle_removeOutliersToBuf\"},"
+        "{\"commandId\":\"foliage_un06.coverage_analysis\",\"entryPoint\":\"handle_coverageAnalysisToBuf\"},"
+        "{\"commandId\":\"foliage_un06.pipeline\",\"entryPoint\":\"handle_pipelineToBuf\"},"
+        "{\"commandId\":\"foliage_un06.store_memory\",\"entryPoint\":\"handle_storeMemoryToBuf\"}"
         "]}",
         out, outSize, required);
 }
@@ -396,6 +416,26 @@ foliage_executeCommand(const char* commandId,
         handler = handle_exportEnginePayloadToBuf;
     else if (std::strcmp(commandId, "foliage_un06.density_heatmap") == 0)
         handler = handle_densityHeatmapToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.compute_bounds") == 0)
+        handler = handle_computeBoundsToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.auto_lod") == 0)
+        handler = handle_autoLODToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.group_by_cluster") == 0)
+        handler = handle_groupByClusterToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.jitter_positions") == 0)
+        handler = handle_jitterPositionsToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.export_instances_csv") == 0)
+        handler = handle_exportCSVToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.snap_to_terrain") == 0)
+        handler = handle_snapToTerrainToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.remove_outliers") == 0)
+        handler = handle_removeOutliersToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.coverage_analysis") == 0)
+        handler = handle_coverageAnalysisToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.pipeline") == 0)
+        handler = handle_pipelineToBuf;
+    else if (std::strcmp(commandId, "foliage_un06.store_memory") == 0)
+        handler = handle_storeMemoryToBuf;
     else
         return MONTED_STATUS_NOT_IMPLEMENTED;
 
